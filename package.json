@@ -9,7 +9,10 @@
         "serve": "pnpm -F @noname/fs dev --dirname=../../dist",
         "start": "pnpm build && pnpm serve",
         "generateTestPack": "pnpm build && tsx scripts/generateTestPack.ts",
-        "lint": "pnpm -r lint"
+        "lint": "pnpm -r lint",
+        "build:deepseek": "node scripts/build-deepseek.mjs",
+        "start:deepseek": "node scripts/deepseek-server.mjs --root dist",
+        "test:deepseek": "node --test scripts/deepseek-server.test.mjs && node --import tsx --test apps/core/noname/ai/deepseek-policy.test.ts apps/core/noname/ai/deepseek-strategy.test.ts"
     },
     "devDependencies": {
         "@eslint/js": "^9.39.2",

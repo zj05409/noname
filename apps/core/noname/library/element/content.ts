@@ -5,6 +5,7 @@ import { Player } from "./player.js";
 import type { GainAnimate } from "./Player/type";
 
 import { delay } from "@/util/index.js";
+import { tryDeepSeekDecision } from "@/ai/deepseek";
 
 // 未来再改
 export const Content: Record<string, ContentFuncByAll | ContentFuncsByAll> = {
@@ -5251,6 +5252,8 @@ export const Content: Record<string, ContentFuncByAll | ContentFuncsByAll> = {
 				return;
 			}
 
+			if (await tryDeepSeekDecision(event)) return;
+			if (_status.event !== event || event.finished) return;
 			const ok = game.check();
 			if (ok) {
 				ui.click.ok();
@@ -5528,6 +5531,8 @@ export const Content: Record<string, ContentFuncByAll | ContentFuncsByAll> = {
 				return;
 			}
 
+			if (await tryDeepSeekDecision(event)) return;
+			if (_status.event !== event || event.finished) return;
 			const ok = game.check();
 			if (ok) {
 				ui.click.ok();
@@ -6032,7 +6037,11 @@ export const Content: Record<string, ContentFuncByAll | ContentFuncsByAll> = {
 		},
 		async (event, trigger, player) => {
 			if (event.result == "ai") {
-				if (event.processAI) {
+				const deepseekHandled = await tryDeepSeekDecision(event);
+				if (_status.event !== event || event.finished) return;
+				if (deepseekHandled) {
+					// Keep the ordinary discard cleanup below.
+				} else if (event.processAI) {
 					event.result = event.processAI();
 				} else {
 					game.check();
@@ -7864,6 +7873,8 @@ export const Content: Record<string, ContentFuncByAll | ContentFuncsByAll> = {
 			if (event.result != "ai") {
 				return;
 			}
+			if (await tryDeepSeekDecision(event)) return;
+			if (_status.event !== event || event.finished) return;
 			if (event.processAI) {
 				event.result = event.processAI();
 			} else {
@@ -7953,7 +7964,11 @@ export const Content: Record<string, ContentFuncByAll | ContentFuncsByAll> = {
 		async (event, trigger, player) => {
 			const { forced } = event;
 			if (event.result == "ai") {
-				if (event.processAI) {
+				const deepseekHandled = await tryDeepSeekDecision(event);
+				if (_status.event !== event || event.finished) return;
+				if (deepseekHandled) {
+					// Keep the ordinary animation and dialog cleanup below.
+				} else if (event.processAI) {
 					event.result = event.processAI();
 				} else {
 					game.check();
@@ -8335,16 +8350,20 @@ export const Content: Record<string, ContentFuncByAll | ContentFuncsByAll> = {
 		},
 		async (event, trigger, player) => {
 			if (event.result == "ai") {
-				event.result = {};
-				if (event.ai) {
-					const result = event.ai(event.getParent(), player);
-					if (typeof result == "number") {
-						event.result.control = event.controls[result];
+				const deepseekHandled = await tryDeepSeekDecision(event);
+				if (_status.event !== event || event.finished) return;
+				if (!deepseekHandled) {
+					event.result = {};
+					if (event.ai) {
+						const result = event.ai(event.getParent(), player);
+						if (typeof result == "number") {
+							event.result.control = event.controls[result];
+						} else {
+							event.result.control = result;
+						}
 					} else {
-						event.result.control = result;
+						event.result.control = event.controls[event.choice];
 					}
-				} else {
-					event.result.control = event.controls[event.choice];
 				}
 			}
 			event.result.index = event.controls.indexOf(event.result.control);
@@ -8403,10 +8422,14 @@ export const Content: Record<string, ContentFuncByAll | ContentFuncsByAll> = {
 		}
 
 		if (event.result == "ai") {
-			if (event.ai) {
-				event.choice = event.ai(event.getParent(), player);
+			const deepseekHandled = await tryDeepSeekDecision(event);
+			if (_status.event !== event || event.finished) return;
+			if (!deepseekHandled) {
+				if (event.ai) {
+					event.choice = event.ai(event.getParent(), player);
+				}
+				event.result = { bool: event.choice };
 			}
-			event.result = { bool: event.choice };
 		}
 		_status.imchoosing = false;
 		event.choosing = false;
