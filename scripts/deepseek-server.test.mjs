@@ -91,12 +91,19 @@ function rawRequest(url, requestPath, { headers = {}, method = "GET", body } = {
 	});
 }
 
+function withoutMetadata(body) {
+	const { requestId, durationMs, ...result } = body;
+	assert.equal(typeof requestId, "string");
+	assert.ok(Number.isFinite(durationMs) && durationMs >= 0);
+	return result;
+}
+
 test("legal decisions use JSON mode, disabled thinking, and Chinese advice", async t => {
 	const provider = await mockProvider(t, (_req, res) => completion(res, { choice: "use-sha-1", advice: "对曹操使用杀，争取造成伤害。" }));
 	const { url } = await gateway(t, { baseUrl: `${provider.url}/v1` });
 	const response = await post(url);
 	assert.equal(response.status, 200);
-	assert.deepEqual(await response.json(), { choice: "use-sha-1", advice: "对曹操使用杀，争取造成伤害。", source: "deepseek", model: "deepseek-flash" });
+	assert.deepEqual(withoutMetadata(await response.json()), { choice: "use-sha-1", advice: "对曹操使用杀，争取造成伤害。", source: "deepseek", model: "deepseek-flash" });
 	assert.equal(provider.requests.length, 1);
 	assert.equal(provider.requests[0].path, "/v1/chat/completions");
 	assert.equal(provider.requests[0].authorization, `Bearer ${TEST_KEY}`);
@@ -104,7 +111,7 @@ test("legal decisions use JSON mode, disabled thinking, and Chinese advice", asy
 	assert.deepEqual(provider.requests[0].body.thinking, { type: "disabled" });
 	assert.ok(provider.requests[0].body.max_tokens >= 1000);
 	assert.deepEqual(JSON.parse(provider.requests[0].body.messages[1].content), snapshot);
-	assert.match(provider.requests[0].body.messages[0].content, /不得假设知道对手手牌/);
+	assert.match(provider.requests[0].body.messages[0].content, /未知手牌、未公开身份和牌堆顺序不能当作事实/);
 });
 
 test("advice accepts an empty legal candidate list", async t => {
@@ -125,12 +132,12 @@ test("turn plans retain bounded memory and identity inference for known players"
 	};
 	const provider = await mockProvider(t, (_req, res) => completion(res, answer));
 	const { url } = await gateway(t, { baseUrl: provider.url });
-	const body = { ...snapshot, kind: "plan", candidates: [], state: { ...snapshot.state, players: [{ id: "opponent", name: "曹操" }], knowledgeMode: "omniscient", turn: { number: 3 }, memory: "此前身份未知。" } };
+	const body = { ...snapshot, kind: "plan", candidates: [], state: { ...snapshot.state, players: [{ id: "opponent", name: "曹操" }], knowledgeMode: "known", turn: { number: 3 }, memory: "此前身份未知。" } };
 	const response = await post(url, body);
 	assert.equal(response.status, 200);
-	assert.deepEqual(await response.json(), { ...answer, source: "deepseek", model: "deepseek-flash" });
+	assert.deepEqual(withoutMetadata(await response.json()), { ...answer, source: "deepseek", model: "deepseek-flash" });
 	assert.deepEqual(JSON.parse(provider.requests[0].body.messages[1].content), body);
-	for (const concept of ["omniscient", "无懈可击", "内奸", "AOE", "推断"]) assert.ok(provider.requests[0].body.messages[0].content.includes(concept));
+	for (const concept of ["已发生", "无懈", "内奸", "群体锦囊", "推断"]) assert.ok(provider.requests[0].body.messages[0].content.includes(concept));
 });
 
 test("plan requests use the stronger configured model and larger output budget", async t => {
@@ -147,7 +154,7 @@ test("plan requests use the stronger configured model and larger output budget",
 		assert.equal((await response.json()).model, kind === "plan" ? "deepseek-v4-pro" : "deepseek-flash");
 		const request = provider.requests.at(-1);
 		assert.equal(request.body.model, kind === "plan" ? "deepseek-v4-pro" : "deepseek-flash");
-		assert.equal(request.body.max_tokens, kind === "plan" ? 3072 : 1536);
+		assert.equal(request.body.max_tokens, kind === "plan" ? 3072 : kind === "advice" ? 2048 : 1536);
 		assert.deepEqual(request.body.thinking, { type: "disabled" });
 	}
 });
@@ -214,6 +221,35 @@ test("timeouts return a bounded local error", async t => {
 	const response = await post(url);
 	assert.equal(response.status, 504);
 	assert.equal((await response.json()).error, "timeout");
+});
+
+test("manual advice has its own deadline, independent of the CPU deadline", async t => {
+	const provider = await mockProvider(t, async (_req, res) => {
+		await new Promise(resolve => setTimeout(resolve, 80));
+		if (!res.destroyed) completion(res, { choice: null, advice: "保留防御牌。" });
+	});
+	const { url } = await gateway(t, { baseUrl: provider.url, timeoutMs: 20, adviceTimeoutMs: 300 });
+	assert.equal((await post(url, { ...snapshot, kind: "advice", candidates: [] })).status, 200);
+});
+
+test("actual usage survives success and invalid paid output without leaking provider fields", async t => {
+	const logs = [];
+	const provider = await mockProvider(t, (_req, res, request) => {
+		const valid = JSON.parse(request.body.messages[1].content).kind === "advice";
+		res.end(JSON.stringify({ usage: { prompt_tokens: 100, completion_tokens: 25, total_tokens: 125, prompt_cache_hit_tokens: 40, prompt_cache_miss_tokens: 60, private: TEST_KEY }, choices: [{ finish_reason: "stop", message: { content: valid ? JSON.stringify({ choice: null, advice: "保留防御牌。" }) : "invalid paid JSON" } }] }));
+	});
+	const { url } = await gateway(t, { baseUrl: provider.url, onDecision: value => logs.push(value) });
+	for (const kind of ["advice", "decision"]) {
+		const response = await post(url, { ...snapshot, kind, ...(kind === "advice" ? { candidates: [] } : {}) });
+		assert.equal(response.status, kind === "advice" ? 200 : 502);
+		const body = await response.json();
+		assert.deepEqual(body.usage, { promptTokens: 100, completionTokens: 25, totalTokens: 125, cacheHitTokens: 40, cacheMissTokens: 60 });
+		assert.equal(typeof body.requestId, "string");
+		assert.ok(!JSON.stringify(body).includes(TEST_KEY));
+	}
+	assert.equal(logs.length, 2);
+	assert.ok(!JSON.stringify(logs).includes(TEST_KEY));
+	assert.deepEqual(logs[1].usage, { promptTokens: 100, completionTokens: 25, totalTokens: 125, cacheHitTokens: 40, cacheMissTokens: 60 });
 });
 
 test("provider failures and malformed or truncated output never expose raw bodies", async t => {

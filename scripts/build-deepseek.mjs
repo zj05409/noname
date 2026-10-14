@@ -14,12 +14,15 @@ for (const directory of ["image", "audio"]) {
 		throw new Error(`缺少 ${directory} 素材；请完整检出官方游戏，或设置 NONAME_ASSETS_DIR 为官方 apps/core 目录。`);
 	}
 }
-const result = spawnSync(process.env.PNPM_BIN || "pnpm", ["-F", "noname...", "build"], {
-	cwd: repository,
-	stdio: "inherit",
-});
-if (result.error) throw result.error;
-if (result.status !== 0) process.exit(result.status || 1);
+// Shared declaration generation reads sibling outputs; build in order to avoid clean/read races.
+for (const name of ["@noname/fs", "@noname/jit", "noname"]) {
+	const result = spawnSync(process.env.PNPM_BIN || "pnpm", ["-F", name, "build"], {
+		cwd: repository,
+		stdio: "inherit",
+	});
+	if (result.error) throw result.error;
+	if (result.status !== 0) process.exit(result.status || 1);
+}
 const destination = resolve(repository, "dist");
 await rm(destination, { recursive: true, force: true });
 await mkdir(destination, { recursive: true });

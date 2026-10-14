@@ -5,7 +5,8 @@ import { Player } from "./player.js";
 import type { GainAnimate } from "./Player/type";
 
 import { delay } from "@/util/index.js";
-import { tryDeepSeekDecision } from "@/ai/deepseek";
+import { recordBuiltinDecision, tryDeepSeekDecision } from "@/ai/deepseek";
+import { markBuiltinDecision, recordCompletedBuiltinDecision } from "@/ai/deepseek-builtin";
 
 // 未来再改
 export const Content: Record<string, ContentFuncByAll | ContentFuncsByAll> = {
@@ -5252,8 +5253,10 @@ export const Content: Record<string, ContentFuncByAll | ContentFuncsByAll> = {
 				return;
 			}
 
-			if (await tryDeepSeekDecision(event)) return;
+			const deepseekHandled = await tryDeepSeekDecision(event);
 			if (_status.event !== event || event.finished) return;
+			markBuiltinDecision(event, !deepseekHandled);
+			if (deepseekHandled) return;
 			const ok = game.check();
 			if (ok) {
 				ui.click.ok();
@@ -5466,6 +5469,7 @@ export const Content: Record<string, ContentFuncByAll | ContentFuncsByAll> = {
 			if (event._result && event.result) {
 				event.result.result = event._result;
 			}
+			recordCompletedBuiltinDecision(event, { game, status: _status }, recordBuiltinDecision);
 		},
 	],
 	chooseToRespond: [
@@ -5531,8 +5535,10 @@ export const Content: Record<string, ContentFuncByAll | ContentFuncsByAll> = {
 				return;
 			}
 
-			if (await tryDeepSeekDecision(event)) return;
+			const deepseekHandled = await tryDeepSeekDecision(event);
 			if (_status.event !== event || event.finished) return;
+			markBuiltinDecision(event, !deepseekHandled);
+			if (deepseekHandled) return;
 			const ok = game.check();
 			if (ok) {
 				ui.click.ok();
@@ -5739,6 +5745,7 @@ export const Content: Record<string, ContentFuncByAll | ContentFuncsByAll> = {
 			if (!_status.noclearcountdown) {
 				game.stopCountChoose();
 			}
+			recordCompletedBuiltinDecision(event, { game, status: _status }, recordBuiltinDecision);
 		},
 	],
 	chooseToGive: [
@@ -6039,6 +6046,7 @@ export const Content: Record<string, ContentFuncByAll | ContentFuncsByAll> = {
 			if (event.result == "ai") {
 				const deepseekHandled = await tryDeepSeekDecision(event);
 				if (_status.event !== event || event.finished) return;
+				markBuiltinDecision(event, !deepseekHandled);
 				if (deepseekHandled) {
 					// Keep the ordinary discard cleanup below.
 				} else if (event.processAI) {
@@ -6125,6 +6133,7 @@ export const Content: Record<string, ContentFuncByAll | ContentFuncsByAll> = {
 			if (!_status.noclearcountdown) {
 				game.stopCountChoose();
 			}
+			recordCompletedBuiltinDecision(event, { game, status: _status }, recordBuiltinDecision);
 		},
 	],
 	async gaincardMultiple(event, trigger, player) {
@@ -7873,8 +7882,10 @@ export const Content: Record<string, ContentFuncByAll | ContentFuncsByAll> = {
 			if (event.result != "ai") {
 				return;
 			}
-			if (await tryDeepSeekDecision(event)) return;
+			const deepseekHandled = await tryDeepSeekDecision(event);
 			if (_status.event !== event || event.finished) return;
+			markBuiltinDecision(event, !deepseekHandled);
+			if (deepseekHandled) return;
 			if (event.processAI) {
 				event.result = event.processAI();
 			} else {
@@ -7905,6 +7916,7 @@ export const Content: Record<string, ContentFuncByAll | ContentFuncsByAll> = {
 			if (event.dialog) {
 				event.dialog.close();
 			}
+			recordCompletedBuiltinDecision(event, { game, status: _status }, recordBuiltinDecision);
 		},
 	],
 	chooseTarget: [
@@ -7966,6 +7978,7 @@ export const Content: Record<string, ContentFuncByAll | ContentFuncsByAll> = {
 			if (event.result == "ai") {
 				const deepseekHandled = await tryDeepSeekDecision(event);
 				if (_status.event !== event || event.finished) return;
+				markBuiltinDecision(event, !deepseekHandled);
 				if (deepseekHandled) {
 					// Keep the ordinary animation and dialog cleanup below.
 				} else if (event.processAI) {
@@ -7999,6 +8012,7 @@ export const Content: Record<string, ContentFuncByAll | ContentFuncsByAll> = {
 					await game.delayx();
 				}
 			}
+			recordCompletedBuiltinDecision(event, { game, status: _status }, recordBuiltinDecision);
 		},
 	],
 	chooseCardTarget: [
@@ -8352,6 +8366,7 @@ export const Content: Record<string, ContentFuncByAll | ContentFuncsByAll> = {
 			if (event.result == "ai") {
 				const deepseekHandled = await tryDeepSeekDecision(event);
 				if (_status.event !== event || event.finished) return;
+				markBuiltinDecision(event, !deepseekHandled);
 				if (!deepseekHandled) {
 					event.result = {};
 					if (event.ai) {
@@ -8381,6 +8396,7 @@ export const Content: Record<string, ContentFuncByAll | ContentFuncsByAll> = {
 				}
 			}
 			event.resume();
+			recordCompletedBuiltinDecision(event, { game, status: _status }, recordBuiltinDecision);
 		},
 	],
 	async chooseBool(event, trigger, player) {
@@ -8424,6 +8440,7 @@ export const Content: Record<string, ContentFuncByAll | ContentFuncsByAll> = {
 		if (event.result == "ai") {
 			const deepseekHandled = await tryDeepSeekDecision(event);
 			if (_status.event !== event || event.finished) return;
+			markBuiltinDecision(event, !deepseekHandled);
 			if (!deepseekHandled) {
 				if (event.ai) {
 					event.choice = event.ai(event.getParent(), player);
@@ -8437,6 +8454,7 @@ export const Content: Record<string, ContentFuncByAll | ContentFuncsByAll> = {
 			event.dialog.close();
 		}
 		game.resume();
+		recordCompletedBuiltinDecision(event, { game, status: _status }, recordBuiltinDecision);
 	},
 	async chooseDrawRecover(event, trigger, player) {
 		const { target, forced } = event;
