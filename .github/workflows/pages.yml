@@ -47,9 +47,19 @@ jobs:
           NONAME_PAGES_AUDIO_CONCURRENCY: 4
         run: pnpm build:pages
       - uses: actions/configure-pages@v5
-      - uses: actions/upload-pages-artifact@v4
+      # upload-pages-artifact excludes dot directories, including our .pnpm modules.
+      - name: Archive complete site including browser dependencies
+        run: |
+          tar --dereference --hard-dereference --directory dist-pages --exclude=.git --exclude=.github -cf "$RUNNER_TEMP/artifact.tar" .
+          tar -tf "$RUNNER_TEMP/artifact.tar" > "$RUNNER_TEMP/pages-files.txt"
+          grep -Fx './.nojekyll' "$RUNNER_TEMP/pages-files.txt"
+          grep -q '^./node_modules/.pnpm/.*\.js$' "$RUNNER_TEMP/pages-files.txt"
+      - uses: actions/upload-artifact@v4
         with:
-          path: dist-pages
+          name: github-pages
+          path: ${{ runner.temp }}/artifact.tar
+          retention-days: 1
+          if-no-files-found: error
 
   deploy:
     needs: build
