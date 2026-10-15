@@ -1,6 +1,7 @@
 /// <reference lib="WebWorker" />
 const worker = globalThis as unknown as ServiceWorkerGlobalScope;
 import * as CompileStrategy from "./compile-strategy";
+import { isJitRequest } from "./request-scope";
 
 worker.addEventListener("install", event => {
 	// The promise that skipWaiting() returns can be safely ignored.
@@ -53,16 +54,13 @@ const strategies: CompileStrategy.BaseStrategy[] = [
 	new CompileStrategy.VueSFCStrategy(),
 ];
 
-const proxyedPath = ["/extension", "/jit-test.ts"];
 // --- fetch 拦截入口 ---
 worker.addEventListener("fetch", (event: FetchEvent) => {
 	const request = event.request;
 	if (typeof request.url !== "string") return;
 
 	const url = new URL(request.url);
-	// 非相关请求
-	if (!["localhost", "127.0.0.1", "10.0.2.2"].includes(url.hostname)) return;
-	if (!proxyedPath.some(i => url.pathname.startsWith(i))) return;
+	if (!isJitRequest(url.href, worker.registration.scope, request.method)) return;
 
 	const strategy = strategies.find(s => s.match({ event, request, url }));
 	if (strategy) {

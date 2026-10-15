@@ -20,3 +20,7 @@ Thumbs.db
 
 # Skill for private use
 .agents/skills/*-selfuse
+
+# GitHub Pages build artifacts and encoded audio cache
+dist-pages/
+.pages-audio-cache/

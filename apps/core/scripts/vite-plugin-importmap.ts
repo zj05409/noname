@@ -4,6 +4,12 @@ import path from "path";
 import { createRequire } from "module";
 const require = createRequire(import.meta.url);
 
+/** Rollup places package dependencies under dist/node_modules, even above root. */
+export function toOutputImportMapPath(root: string, resolved: string): string {
+	const relative = normalizePath(path.relative(root, resolved));
+	return `.${path.posix.normalize(`/${relative}`)}`;
+}
+
 export default function vitePluginJIT(importMap: Record<string, string> = {}): Plugin {
 	let root = process.cwd();
 	let isBuild = false;
@@ -22,7 +28,7 @@ export default function vitePluginJIT(importMap: Record<string, string> = {}): P
 			for (const key in importMap) {
 				try {
 					const resolved = require.resolve(importMap[key]);
-					resolvedImportMap[key] = normalizePath("/" + path.relative(root, resolved));
+					resolvedImportMap[key] = toOutputImportMapPath(root, resolved);
 				} catch (e) {
 					resolvedImportMap[key] = importMap[key];
 				}
@@ -106,7 +112,7 @@ export default function vitePluginJIT(importMap: Record<string, string> = {}): P
 			// navigator.serviceWorker.controller?.postMessage({ action: "reload" });
 			// await registration.update().catch(e => console.error("worker update失败", e));
 			if (sessionStorage.getItem("canUseTs") !== "true") {
-				const path = "/jit-test.ts";
+				const path = new URL("jit-test.ts", scope).href;
 				console.log((await import(/* @vite-ignore */ path)).text);
 				sessionStorage.setItem("canUseTs", "true");
 			}
@@ -124,7 +130,7 @@ export default function vitePluginJIT(importMap: Record<string, string> = {}): P
 
 	const script = document.createElement("script");
 	script.type = "module";
-	script.src = "/noname/entry.js";
+	script.src = new URL("./noname/entry.js", location.href).href;
 	document.head.appendChild(script);
 })();`
 			);

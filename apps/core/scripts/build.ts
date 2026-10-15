@@ -27,7 +27,7 @@ async function main() {
 	 * 无名杀所使用的导入映射（import map，翻译来源MDN）
 	 */
 	const importMap: Record<string, string> = {
-		noname: "/noname.js",
+		noname: "./noname.js",
 		vue: "vue/dist/vue.esm-browser.js",
 		"pinyin-pro": "pinyin-pro",
 		dedent: "dedent",

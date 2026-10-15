@@ -1,5 +1,6 @@
 /// <reference types="vite/client" />
-import { lib, game, _status } from "noname";
+import { rootURL, lib, game, _status } from "noname";
+import { resolvePackURL } from "./pack-url";
 
 export async function importCardPack(name: string) {
 	await importFunction("card", `/card/${name}`);
@@ -52,6 +53,7 @@ export async function importMode(name: string) {
 }
 
 async function importFunction(type: "card" | "character" | "extension" | "mode", path: string): Promise<void> {
+	path = resolvePackURL(path, rootURL);
 	const modeContent = await import(/* @vite-ignore */ path + ".js").catch(async e => {
 		if (window.isSecureContext) {
 			try {

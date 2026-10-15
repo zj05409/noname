@@ -7,6 +7,7 @@ import { optionsMenu } from "./menu/pages/optionsMenu.js";
 import { otherMenu } from "./menu/pages/otherMenu.js";
 import { startMenu } from "./menu/pages/startMenu.js";
 import { Pagination } from "@/util/pagination.js";
+import { mountDeepSeekPanel } from "@/ai/deepseek";
 
 export class Create {
 	/**
@@ -3134,6 +3135,7 @@ export class Create {
 			lib.arenaReady?.shift()();
 		}
 		delete lib.arenaReady;
+		mountDeepSeekPanel();
 		/*if (lib.config.auto_check_update && !sessionStorage.getItem("auto_check_update")) {
 			setTimeout(() => {
 				sessionStorage.setItem("auto_check_update", "1");
