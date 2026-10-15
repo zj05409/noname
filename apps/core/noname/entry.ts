@@ -11,7 +11,7 @@ import "vue/dist/vue.esm-browser.js";
 		lib.device = device;
 
 		// 预加载脚本
-		const path = "/preload.js";
+		const path = new URL("./preload.js", location.href).href;
 		const { default: preload } = await import(/* @vite-ignore */ path).catch(() => {
 			// Electron平台
 			if (typeof window.require === "function") {

@@ -1,0 +1,64 @@
+name: Publish playable Noname to Pages
+
+on:
+  push:
+    branches: [codex/deepseek-ai]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: noname-pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v5
+        with:
+          version: 10
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: pnpm
+      - name: Install audio encoder
+        run: |
+          if ! command -v ffmpeg >/dev/null; then
+            sudo apt-get update
+            sudo apt-get install -y --no-install-recommends ffmpeg
+          fi
+      - uses: actions/cache@v4
+        with:
+          path: .pages-audio-cache
+          key: pages-audio-v1-${{ runner.os }}-${{ hashFiles('scripts/pages-audio.mjs', 'apps/core/audio/**') }}
+      - run: pnpm install --frozen-lockfile
+      - name: Test native AI, user-key requests, static files and replay
+        run: pnpm test:deepseek
+      - name: Build complete static game without credentials
+        env:
+          NONAME_BUILD_CHANNEL: test
+          NONAME_BUILD_COMMIT: ${{ github.sha }}
+          NONAME_PAGES_AUDIO_CONCURRENCY: 4
+        run: pnpm build:pages
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v4
+        with:
+          path: dist-pages
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

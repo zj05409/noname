@@ -12,7 +12,8 @@
         "lint": "pnpm -r lint",
         "build:deepseek": "node scripts/build-deepseek.mjs",
         "start:deepseek": "node scripts/deepseek-server.mjs --root dist",
-        "test:deepseek": "node --test scripts/deepseek-server.test.mjs && node --import tsx --test apps/core/noname/ai/deepseek-policy.test.ts apps/core/noname/ai/deepseek-strategy.test.ts apps/core/noname/ai/deepseek-recorder.test.ts apps/core/noname/ai/deepseek-builtin.test.ts"
+        "test:deepseek": "node --test scripts/deepseek-server.test.mjs scripts/pages-audio.test.mjs && node --import tsx --test apps/core/noname/ai/deepseek-policy.test.ts apps/core/noname/ai/deepseek-strategy.test.ts apps/core/noname/ai/deepseek-recorder.test.ts apps/core/noname/ai/deepseek-builtin.test.ts apps/core/noname/ai/deepseek-browser.test.ts apps/core/noname/init/static-files.test.ts apps/core/scripts/vite-plugin-importmap.test.ts packages/jit/src/service-worker/request-scope.test.ts apps/core/noname/init/pack-url.test.ts",
+        "build:pages": "node scripts/build-pages.mjs"
     },
     "devDependencies": {
         "@eslint/js": "^9.39.2",

@@ -1,3 +1,5 @@
+> 本分支在线试玩：[无名杀网页版](https://zj05409.github.io/noname/)。默认原版 AI，DeepSeek 需用户自带 API Key，详见[网页版说明](docs/github-pages.md)。
+
 <h1 align="center">无名杀</h1>
 
 <p align="center">

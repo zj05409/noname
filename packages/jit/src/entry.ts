@@ -44,7 +44,7 @@
 		// navigator.serviceWorker.controller?.postMessage({ action: "reload" });
 		// await registration.update().catch(e => console.error("worker update失败", e));
 		if (sessionStorage.getItem("canUseTs") !== "true") {
-			const path = "/jit-test.ts";
+			const path = new URL("jit-test.ts", scope).href;
 			console.log((await import(/* @vite-ignore */ path)).text);
 			sessionStorage.setItem("canUseTs", "true");
 		}

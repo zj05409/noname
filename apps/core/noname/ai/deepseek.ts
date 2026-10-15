@@ -2,18 +2,22 @@ import { _status, ai, game, get, lib, ui } from "noname";
 import { DeepSeekPolicy, type DeepSeekReply } from "./deepseek-policy";
 import { installStrategicObserver } from "./deepseek-strategy";
 import { DeepSeekMatchRecorder, summarizeRecordUsage } from "./deepseek-recorder";
+import { getBrowserDecision } from "./deepseek-browser";
 
+const staticSite = typeof window !== "undefined" && (window as any).nonameStaticSite === true;
+let browserApiKey = "";
+const hasCredentials = () => !staticSite || browserApiKey.length > 0;
 const preferences = { master: "noname-deepseek-enabled", computer: "noname-deepseek-computer", advice: "noname-deepseek-advice", source: "noname-advice-source" };
 function preference(name: string, fallback: boolean) {
 	try { const value = localStorage.getItem(name); return value === null ? fallback : value === "true"; } catch { return fallback; }
 }
-let enabled = preference(preferences.master, false);
+let enabled = !staticSite && preference(preferences.master, false);
 let computerEnabled = preference(preferences.computer, true);
 let adviceEnabled = preference(preferences.advice, true);
 let adviceSource = "builtin";
-try { if (localStorage.getItem(preferences.source) === "deepseek") adviceSource = "deepseek"; } catch {}
-const useComputer = () => enabled && computerEnabled && !_status.video && !_status.playback;
-const useAdvice = () => enabled && adviceEnabled && !_status.video && !_status.playback;
+try { if (!staticSite && localStorage.getItem(preferences.source) === "deepseek") adviceSource = "deepseek"; } catch {}
+const useComputer = () => enabled && hasCredentials() && computerEnabled && !_status.video && !_status.playback;
+const useAdvice = () => enabled && hasCredentials() && adviceEnabled && !_status.video && !_status.playback;
 const pending = new Map<AbortController, boolean>();
 let adviceNode: HTMLElement | undefined, computerNode: HTMLElement | undefined;
 let policy: DeepSeekPolicy | undefined, recorder: DeepSeekMatchRecorder | undefined;
@@ -30,7 +34,8 @@ async function request(packet: Record<string, unknown>): Promise<DeepSeekReply> 
 	let timedOut = false;
 	const timeout = setTimeout(() => { timedOut = true; controller.abort(); }, isComputer ? 22000 : 50000);
 	try {
-		const response = await fetch("/api/deepseek/decision", {
+		if (staticSite) return await getBrowserDecision(browserApiKey, packet, { signal: controller.signal });
+		const response = await fetch(new URL("api/deepseek/decision", document.baseURI), {
 			method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(packet), signal: controller.signal,
 		});
 		const reply = await response.json().catch(() => null);
@@ -41,7 +46,7 @@ async function request(packet: Record<string, unknown>): Promise<DeepSeekReply> 
 		return reply;
 	} catch (error) {
 		if (controller.signal.aborted) throw Object.assign(new Error(timedOut ? "等待模型响应超时。" : "请求已取消。"), { code: timedOut ? "client_timeout" : "canceled" });
-		if (error instanceof TypeError) throw Object.assign(new Error("无法连接本机建议服务，请重新运行游戏启动文件。"), { code: "network_error" });
+		if (error instanceof TypeError) throw Object.assign(new Error(staticSite ? "无法连接 DeepSeek 官方接口，请检查网络后重试。" : "无法连接本机建议服务，请重新运行游戏启动文件。"), { code: "network_error" });
 		throw error;
 	} finally { clearTimeout(timeout); pending.delete(controller); }
 }
@@ -79,6 +84,7 @@ export function recordBuiltinDecision(event: any) {
 }
 
 function savePreferences() {
+	if (!hasCredentials()) enabled = false;
 	try {
 		localStorage.setItem(preferences.master, String(enabled)); localStorage.setItem(preferences.computer, String(computerEnabled)); localStorage.setItem(preferences.advice, String(adviceEnabled));
 		localStorage.setItem(preferences.source, adviceSource);
@@ -112,6 +118,7 @@ export function mountDeepSeekPanel() {
 #noname-deepseek-content [hidden]{display:none}
 #noname-deepseek-content label{display:flex;gap:10px;align-items:center;margin:12px 0;font:inherit;color:inherit}
 #noname-deepseek-content input[type=checkbox]{width:18px;height:18px;margin:0;accent-color:#c8a667;flex-shrink:0}
+#noname-deepseek-content input[type=password]{font:inherit;color:#eee;background:#303744;border:1px solid #9c8657;border-radius:5px;padding:8px;width:min(480px,100%)}
 #noname-deepseek-content p{margin:8px 0;color:#b8c1cf;font-size:13px}
 #noname-deepseek-advice{white-space:pre-wrap;overflow-wrap:anywhere;font-size:16px;line-height:1.9;margin:16px 0;max-height:none;height:auto}
 #noname-deepseek-root .ds-record-details{white-space:pre-wrap;overflow-wrap:anywhere;font:13px/1.7 ui-monospace,monospace;max-height:none}
@@ -151,6 +158,23 @@ export function mountDeepSeekPanel() {
 	button(tabs, "建议", () => show("advice")); button(tabs, "设置", () => show("settings")); button(tabs, "牌局记录", () => show("records"));
 	button(toolbar, "助手设置", () => show("settings"));
 	const toolbarAdvice = button(toolbar, "给我建议", () => obtainAdvice()); button(toolbar, "牌局记录", () => show("records"));
+	if (staticSite) {
+		const description = document.createElement("p"); description.textContent = "网页版默认使用原版 AI。DeepSeek 需要你自己的 API Key，调用费用由你的账号承担。Key 仅在本页面内存中保留，直接发送给 DeepSeek 官方接口，不上传到本站，不写入录像；刷新后需重新填写。"; settingsView.append(description);
+		const label = document.createElement("label"), keyInput = document.createElement("input"); keyInput.type = "password"; keyInput.id = "noname-deepseek-api-key"; keyInput.placeholder = "填写你自己的 DeepSeek API Key"; keyInput.autocomplete = "off"; keyInput.spellcheck = false; keyInput.maxLength = 512; label.append(document.createTextNode("API Key"), keyInput); settingsView.append(label);
+		const credentials = document.createElement("p"), actions = document.createElement("div"); actions.className = "ds-actions"; settingsView.append(actions, credentials);
+		credentials.textContent = "尚未提供 API Key，DeepSeek 保持关闭。";
+		button(actions, "使用此 Key", () => {
+			const value = keyInput.value.trim();
+			if (!/^[\x21-\x7e]{10,512}$/.test(value)) { credentials.textContent = "请填写完整的 API Key。"; return; }
+			for (const controller of pending.keys()) controller.abort();
+			browserApiKey = value; keyInput.value = ""; enabled = false;
+			credentials.textContent = "Key 已设置。现在可手动开启 DeepSeek；刷新后需要重新填写。"; savePreferences();
+		});
+		button(actions, "清除 Key", () => {
+			browserApiKey = ""; keyInput.value = ""; enabled = false; adviceSource = "builtin";
+			credentials.textContent = "Key 已清除，DeepSeek 已关闭。"; savePreferences();
+		});
+	}
 	const checkbox = (text: string, checked: boolean, change: (checked: boolean) => void) => {
 		const label = document.createElement("label"), input = document.createElement("input"); input.type = "checkbox"; input.checked = checked;
 		input.addEventListener("change", () => change(input.checked)); label.append(input, document.createTextNode(text)); settingsView.append(label); return input;
@@ -160,11 +184,12 @@ export function mountDeepSeekPanel() {
 	const adviceToggle = checkbox("给我 DeepSeek 建议", adviceEnabled, value => { adviceEnabled = value; savePreferences(); });
 	const note = document.createElement("p"); note.textContent = "电脑与建议可分别选择。DeepSeek 首次默认关闭；原版 AI 建议始终可用，不消耗 Token。你的 DeepSeek 建议只在点击时请求。"; settingsView.append(note);
 	const presets = document.createElement("div"); presets.className = "ds-actions"; settingsView.append(presets);
-	button(presets, "电脑原版，我用 DeepSeek 建议", () => { enabled = true; computerEnabled = false; adviceEnabled = true; adviceSource = "deepseek"; savePreferences(); });
-	button(presets, "电脑和我都用 DeepSeek", () => { enabled = true; computerEnabled = true; adviceEnabled = true; adviceSource = "deepseek"; savePreferences(); });
+	const advicePreset = button(presets, "电脑原版，我用 DeepSeek 建议", () => { enabled = true; computerEnabled = false; adviceEnabled = true; adviceSource = "deepseek"; savePreferences(); });
+	const allPreset = button(presets, "电脑和我都用 DeepSeek", () => { enabled = true; computerEnabled = true; adviceEnabled = true; adviceSource = "deepseek"; savePreferences(); });
 	const knowledge = document.createElement("p"); knowledge.textContent = "模型只接收决策者已知的信息和已发生的行动；本地完整录像与其他人的隐藏身份、未知手牌不会发送。"; settingsView.append(knowledge);
 	const models = document.createElement("p"); models.textContent = "正在读取模型设置…"; settingsView.append(models);
-	void fetch("/api/deepseek/health").then(response => response.json()).then(value => { models.textContent = `具体出牌 / 你的建议：${value.model}；电脑回合规划：${value.planModel || value.model}。`; }).catch(() => { models.textContent = "本机建议服务尚未连接。"; });
+	if (staticSite) models.textContent = "具体出牌 / 你的建议：deepseek-flash；电脑回合规划：deepseek-v4-pro。请求直接发送到 DeepSeek 官方接口。";
+	else void fetch(new URL("api/deepseek/health", document.baseURI)).then(response => response.json()).then(value => { models.textContent = `具体出牌 / 你的建议：${value.model}；电脑回合规划：${value.planModel || value.model}。`; }).catch(() => { models.textContent = "本机建议服务尚未连接。"; });
 	computerNode = document.createElement("p"); settingsView.append(computerNode);
 	adviceNode = document.createElement("div"); adviceNode.id = "noname-deepseek-advice"; adviceNode.textContent = "在自己的出牌或选择提示出现时获取建议。建议只显示文字，不替你出牌。";
 	const adviceActions = document.createElement("div"); adviceActions.className = "ds-actions"; adviceView.append(adviceActions, adviceNode);
@@ -187,6 +212,7 @@ export function mountDeepSeekPanel() {
 	}
 	refreshControls = () => {
 		masterToggle.checked = enabled; computerToggle.checked = computerEnabled; adviceToggle.checked = adviceEnabled;
+		masterToggle.disabled = !hasCredentials(); advicePreset.disabled = allPreset.disabled = !hasCredentials();
 		computerToggle.disabled = !enabled; adviceToggle.disabled = !enabled;
 		sourceSelect.value = adviceSource;
 		toolbarAdvice.disabled = requestButton.disabled = advicePending || !!(_status.video || _status.playback);

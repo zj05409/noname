@@ -1,5 +1,14 @@
 //@ts-nocheck
 import { FileSystem, FileSystemError, FileSystemErrorCode, installLegacyFileSystemAPI } from "@/library/fs";
+import { createStaticFileApi, STATIC_READ_ONLY_MESSAGE } from "./static-files";
+
+let staticFileApi;
+
+function assertWritableSite(path) {
+	if (window.nonameStaticSite === true) {
+		throw createFileSystemError(FileSystemErrorCode.PermissionDenied, path, STATIC_READ_ONLY_MESSAGE);
+	}
+}
 
 /**
  * @typedef { import("@/library/fs").FileSystemAdapter } FileSystemAdapter
@@ -14,7 +23,7 @@ export default async function browserReady({ lib, game }) {
 	const fs = new FileSystem(adpt);
 
 	try {
-		// 这里只探测 dev server 的连通性和响应格式；文件不存在会返回 null。
+		// 本地检查服务端，静态网站检查构建时生成的游戏文件清单。
 		await fs.stat("noname.js");
 	} catch (e) {
 		console.error("文件读写函数初始化失败:", e);
@@ -62,6 +71,7 @@ class BrowserAdapter {
 		const append = options.append === true;
 		const writable = options.write === true || append;
 		const readable = options.read ?? !writable;
+		if (writable || options.create || options.createNew || options.truncate) assertWritableSite(path);
 
 		if (!readable && !writable) {
 			throw createFileSystemError(FileSystemErrorCode.IoError, path, "open requires read or write access");
@@ -98,6 +108,7 @@ class BrowserAdapter {
 		const data = await requestBackend("/readFile", path, { fileName: path });
 
 		try {
+			if (data instanceof Uint8Array) return data;
 			if (isByteArray(data)) {
 				return new Uint8Array(data);
 			}
@@ -123,6 +134,7 @@ class BrowserAdapter {
 	 */
 	async write(path, data) {
 		assertValidPath(path);
+		assertWritableSite(path);
 		assertUint8Array(data, path);
 
 		await requestBackend("/writeFile", path, undefined, {
@@ -167,6 +179,7 @@ class BrowserAdapter {
 	 */
 	async createDir(path, options = {}) {
 		assertValidPath(path);
+		assertWritableSite(path);
 
 		if (!options.recursive) {
 			const info = await this.stat(path);
@@ -194,6 +207,7 @@ class BrowserAdapter {
 	 */
 	async remove(path, options = {}) {
 		assertValidPath(path);
+		assertWritableSite(path);
 		const info = await this.stat(path);
 		if (info === null) {
 			throw createFileSystemError(FileSystemErrorCode.NotFound, path, "Path does not exist");
@@ -292,6 +306,14 @@ class BrowserFileHandle {
 }
 
 async function requestBackend(route, path, query, init) {
+	if (window.nonameStaticSite === true) {
+		try {
+			staticFileApi ??= createStaticFileApi({ baseURL: new URL(".", window.location.href) });
+			return await staticFileApi(route, path, query, init);
+		} catch (error) {
+			throw toFileSystemError(error, path);
+		}
+	}
 	const queryString = query ? `?${new URLSearchParams(query)}` : "";
 	let response;
 
